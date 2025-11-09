@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Inventario Completo de Pastillas — Familiar</title>
+
+  <!-- Firebase compat (works on GitHub Pages) -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+
+  <!-- Estilos (vivos y responsivos) -->
+  <style>
+    :root{
+      --bg1: #fff7ed;
+      --bg2: #ecfeff;
+      --accent1: #2563eb;
+      --accent2: #16a34a;
+      --danger: #ef4444;
+      --ok: #10b981;
+      --card: #ffffff;
+      --muted: #64748b;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family: Inter, "Helvetica Neue", Arial;
+      background: linear-gradient(180deg,var(--bg2),var(--bg1));
+      color:#0f172a;
+      -webkit-font-smoothing:antialiased;
+      -moz-osx-font-smoothing:grayscale;
+      padding:20px;
+    }
+    header{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      max-width:1200px;
+      margin:0 auto 18px;
+    }
+    .brand{
+      display:flex;
+      gap:12px;
+      align-items:center;
+    }
+    .logo{
+      width:56px;height:56px;border-radius:10px;
+      background:linear-gradient(135deg,var(--accent1),var(--accent2));
+      display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:20px;
+      box-shadow:0 6px 18px rgba(16,24,40,0.12);
+    }
+    h1{font-size:20px;margin:0}
+    .controls{display:flex;gap:8px;align-items:center}
+    button{
+      padding:8px 12px;border-radius:8px;border:0;color:white;background:linear-gradient(90deg,var(--accent1),var(--accent2));
+      cursor:pointer;font-weight:600;
+    }
+    button.ghost{background:transparent;border:1px solid rgba(15,23,42,0.06);color:var(--accent1)}
+    .container{max-width:1200px;margin:0 auto;display:grid;grid-template-columns:1fr 360px;gap:18px}
+    .panel{background:var(--card);border-radius:12px;padding:14px;box-shadow:0 6px 18px rgba(2,6,23,0.06)}
+    .form-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+    input, select, textarea{padding:10px;border-radius:8px;border:1px solid #e6eef8;flex:1}
+    input[type="number"]{width:120px}
+    .list{display:grid;gap:10px}
+    .card{padding:12px;border-radius:10px;background:linear-gradient(180deg,#ffffff,#fbfdff);display:flex;justify-content:space-between;align-items:center;gap:10px}
+    .meta{display:flex;flex-direction:column}
+    .name{font-weight:700;font-size:16px}
+    .small{font-size:13px;color:var(--muted)}
+    .badge{padding:6px 8px;border-radius:999px;font-weight:700;font-size:12px;color:white}
+    .badge.low{background:var(--danger)}
+    .badge.ok{background:var(--ok)}
+    .actions{display:flex;gap:6px}
+    .actions button{padding:6px 8px;font-size:14px}
+    .search{display:flex;gap:8px;margin-bottom:10px}
+    .hist{max-height:360px;overflow:auto;padding:8px;border-radius:8px;background:#f8fafc}
+    .status{
+      display:flex;gap:10px;align-items:center;font-size:13px;color:var(--muted)
+    }
+    .footer{max-width:1200px;margin:18px auto 0;text-align:center;color:var(--muted);font-size:13px}
+    @media(max-width:980px){
+      .container{grid-template-columns:1fr}
+      header{flex-direction:column;align-items:flex-start;gap:8px}
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <div class="logo">💊</div>
+      <div>
+        <h1>Inventario Familiar de Pastillas</h1>
+        <div class="small">Guarda TODO: pastillas, historial, y sincroniza offline → nube</div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div id="user-area" class="small"></div>
+      <button id="loginBtn">Iniciar sesión (nombre)</button>
+      <button id="exportBtn" class="ghost">Exportar CSV</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- Main panel -->
+    <div class="panel">
+      <div class="search">
+        <input id="q" placeholder="Buscar por nombre o responsable..." />
+        <select id="filter">
+          <option value="all">Todos</option>
+          <option value="low">Baja cantidad (≤3)</option>
+        </select>
+        <button id="refreshBtn" class="ghost">🔁 Forzar</button>
+      </div>
+
+      <h3 style="margin:8px 0">Agregar / Editar Medicamento</h3>
+      <div class="form-row">
+        <input id="nombre" placeholder="Nombre de la pastilla"/>
+        <input id="cantidad" type="number" placeholder="Cantidad" />
+      </div>
+      <div class="form-row">
+        <input id="hora" type="time" placeholder="Hora (opcional)"/>
+        <input id="dosis" placeholder="Dosis (ej. 1 tableta, 5ml)" />
+      </div>
+      <div class="form-row">
+        <input id="responsable" placeholder="Responsable (ej. Juan)"/>
+        <select id="frecuencia">
+          <option value="">Frecuencia (opcional)</option>
+          <option value="mañana">Diaria - Mañana</option>
+          <option value="tarde">Diaria - Tarde</option>
+          <option value="noche">Diaria - Noche</option>
+        </select>
+        <button id="saveBtn">💾 Guardar</button>
+        <button id="clearBtn" class="ghost">Limpiar</button>
+      </div>
+
+      <h3 style="margin:12px 0 6px">Inventario</h3>
+      <div id="lista" class="list"></div>
+    </div>
+
+    <!-- Right panel -->
+    <aside class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div class="small">Estado conexión</div>
+          <div id="conn" class="status">Comprobando...</div>
+        </div>
+        <div style="text-align:right">
+          <div class="small">Última sincronización</div>
+          <div id="lastSync" class="small">—</div>
+        </div>
+      </div>
+
+      <h3 style="margin-top:12px">Historial reciente</h3>
+      <div id="hist" class="hist"></div>
+
+      <h3 style="margin-top:12px">Cola offline (pendientes)</h3>
+      <div id="queue" class="hist"></div>
+
+      <div style="margin-top:10px">
+        <button id="forceSync" class="ghost">Forzar sincronización</button>
+        <button id="clearLocal" class="ghost">Borrar cache local</button>
+      </div>
+    </aside>
+  </div>
+
+  <div class="footer">Hecho para uso familiar · Sube este archivo a GitHub Pages y configura Realtime DB</div>
+
+  <!-- Script funcional -->
+  <script>
+  /**************************************************************************
+   * Configuración Firebase - pega tu configuración aquí (ya incluida abajo)
+   * Asegúrate de que databaseURL sea correcto como:
+   * "https://inventarioabuela-db48f-default-rtdb.firebaseio.com"
+   **************************************************************************/
+  const firebaseConfig = {
+    apiKey: "AIzaSyAIL_YNhxBzn16bRW8VRvw7vBP812lN8pM",
+    authDomain: "inventarioabuela-db48f.firebaseapp.com",
+    databaseURL: "https://inventarioabuela-db48f-default-rtdb.firebaseio.com",
+    projectId: "inventarioabuela-db48f",
+    storageBucket: "inventarioabuela-db48f.firebasestorage.app",
+    messagingSenderId: "59938878894",
+    appId: "1:59938878894:web:a31b673d2ed9b5b759043f",
+    measurementId: "G-PVFKXM4CKM"
+  };
+
+  // Inicializar Firebase
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+
+  /**************************************************************************
+   * Estructura de datos (en Firebase)
+   * /app/users/{userid} -> {name, lastSeen}
+   * /app/items/{itemid} -> {nombre,cantidad,hora,dosis,responsable,frecuencia,createdAt,updatedAt}
+   * /app/history/{pushid} -> {itemId,nombre,responsable,accion,fecha,user}
+   * /app/queue/{pushid} -> (opcional) -- pero manejamos cola local
+   **************************************************************************/
+
+  // Elementos UI
+  const lista = document.getElementById('lista');
+  const histEl = document.getElementById('hist');
+  const queueEl = document.getElementById('queue');
+  const connEl = document.getElementById('conn');
+  const lastSyncEl = document.getElementById('lastSync');
+  const userArea = document.getElementById('user-area');
+
+  // Form
+  const nombreIn = document.getElementById('nombre');
+  const cantidadIn = document.getElementById('cantidad');
+  const horaIn = document.getElementById('hora');
+  const dosisIn = document.getElementById('dosis');
+  const responsableIn = document.getElementById('responsable');
+  const frecuenciaIn = document.getElementById('frecuencia');
+
+  // Buttons
+  const saveBtn = document.getElementById('saveBtn');
+  const clearBtn = document.getElementById('clearBtn');
+  const loginBtn = document.getElementById('loginBtn');
+  const exportBtn = document.getElementById('exportBtn');
+  const refreshBtn = document.getElementById('refreshBtn');
+  const forceSyncBtn = document.getElementById('forceSync');
+  const clearLocalBtn = document.getElementById('clearLocal');
+
+  // Search/filter
+  const qIn = document.getElementById('q');
+  const filterIn = document.getElementById('filter');
+
+  // Local storage keys
+  const LS_ITEMS = 'inv_items_v2';
+  const LS_HISTORY = 'inv_history_v2';
+  const LS_QUEUE = 'inv_queue_v2';
+  const LS_USER = 'inv_user_v2';
+
+  // Local caches
+  let localItems = JSON.parse(localStorage.getItem(LS_ITEMS) || '{}');
+  let localHistory = JSON.parse(localStorage.getItem(LS_HISTORY) || '{}');
+  let localQueue = JSON.parse(localStorage.getItem(LS_QUEUE) || '[]'); // array of ops
+  let currentUser = JSON.parse(localStorage.getItem(LS_USER) || 'null');
+
+  // Helper: timestamp
+  function TS(){ return new Date().toISOString(); }
+  function nowLocale(){ return new Date().toLocaleString('es-CO'); }
+
+  // UI: show user
+  function renderUser(){
+    if(currentUser && currentUser.name){
+      userArea.textContent = `Usuario: ${currentUser.name}`;
+      loginBtn.textContent = 'Cambiar usuario';
+    } else {
+      userArea.textContent = 'No identificado';
+      loginBtn.textContent = 'Iniciar sesión (nombre)';
+    }
+  }
+  renderUser();
+
+  // Login simple (sin contraseña)
+  loginBtn.addEventListener('click',()=>{
+    const name = prompt('Escribe tu nombre (ej: Juan):', currentUser?.name || '');
+    if(name && name.trim()){
+      currentUser = { name: name.trim(), lastSeen: TS() };
+      localStorage.setItem(LS_USER, JSON.stringify(currentUser));
+      // Guardar en firebase users
+      const uref = db.ref('app/users').push();
+      // We store a minimal user record with timestamp (not secure user management, just for logs)
+      uref.set({ name: currentUser.name, lastSeen: TS() }).catch(()=>{/*no fatal*/});
+      renderUser();
+    }
+  });
+
+  // Save item (create or update)
+  let editingId = null;
+  saveBtn.addEventListener('click', async ()=>{
+    const nombre = nombreIn.value.trim();
+    const cantidad = parseInt(cantidadIn.value) || 0;
+    const hora = horaIn.value || '';
+    const dosis = dosisIn.value.trim() || '';
+    const responsable = responsableIn.value.trim() || (currentUser?currentUser.name:'');
+    const frecuencia = frecuenciaIn.value || '';
+
+    if(!nombre || !cantidad || !responsable){
+      alert('Completa nombre, cantidad y responsable');
+      return;
+    }
+
+    const item = {
+      nombre, cantidad, hora, dosis, responsable, frecuencia,
+      updatedAt: TS(),
+      createdAt: editingId ? (localItems[editingId]?.createdAt || TS()) : TS()
+    };
+
+    if(editingId){
+      // update existing
+      await writeWithQueue('update', editingId, item);
+      editingId = null;
+    } else {
+      // create new
+      const newId = db.ref('app/items').push().key;
+      item.id = newId;
+      item.createdAt = TS();
+      await writeWithQueue('create', newId, item);
+    }
+    clearForm();
+    refreshUI(); // local refresh while sync happens
+  });
+
+  clearBtn.addEventListener('click', clearForm);
+  function clearForm(){
+    editingId = null;
+    nombreIn.value = '';
+    cantidadIn.value = '';
+    horaIn.value = '';
+    dosisIn.value = '';
+    responsableIn.value = currentUser?.name || '';
+    frecuenciaIn.value = '';
+  }
+
+  // Export CSV
+  exportBtn.addEventListener('click', ()=>{
+    db.ref('app/items').once('value').then(snapshot=>{
+      const rows = [['id','nombre','cantidad','hora','dosis','responsable','frecuencia','createdAt','updatedAt']];
+      snapshot.forEach(ch=>{
+        const v = ch.val();
+        rows.push([ch.key, v.nombre, v.cantidad, v.hora||'', v.dosis||'', v.responsable||'', v.frecuencia||'', v.createdAt||'', v.updatedAt||'']);
+      });
+      const csv = rows.map(r => r.map(cell=>`"${String(cell).replace(/"/g,'""')}"`).join(',')).join('\n');
+      const blob = new Blob([csv], {type:'text/csv'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'inventario_pastillas.csv'; document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    });
+  });
+
+  // Force refresh
+  refreshBtn.addEventListener('click', ()=>{ loadFromFirebase(true); });
+
+  // Force sync
+  forceSyncBtn.addEventListener('click', ()=>{ flushQueue(); });
+
+  // Clear local cache
+  clearLocalBtn.addEventListener('click', ()=>{
+    if(confirm('Borrar cache local (items, historial y cola pendiente)?')){
+      localStorage.removeItem(LS_ITEMS);
+      localStorage.removeItem(LS_HISTORY);
+      localStorage.removeItem(LS_QUEUE);
+      localItems={}; localHistory={}; localQueue=[];
+      refreshUI();
+    }
+  });
+
+  // Writing with queue: always push to local queue, try to send to Firebase.
+  async function writeWithQueue(op, id, payload){
+    // op: 'create' | 'update' | 'delete'
+    const opObj = { op, id, payload, ts: TS(), user: currentUser?.name || 'anon' };
+    // Save to local cache first
+    applyLocalOp(opObj, false);
+    localQueue.push(opObj);
+    localStorage.setItem(LS_QUEUE, JSON.stringify(localQueue));
+    updateQueueUI();
+    // Attempt immediate flush
+    if(navigator.onLine) await flushQueue();
+  }
+
+  // Apply an op locally (so UI shows immediate result). If remote==true skip saving to queue
+  function applyLocalOp(opObj){
+    const {op,id,payload,ts,user} = opObj;
+    if(op==='create' || op==='update'){
+      localItems[id] = Object.assign({}, payload, {id});
+      // write history: if update includes change in cantidad (e.g. taking), caller adds history separately
+    } else if(op==='delete'){
+      delete localItems[id];
+    }
+    localStorage.setItem(LS_ITEMS, JSON.stringify(localItems));
+  }
+
+  // Flush queue: try to send all pending ops to Firebase
+  async function flushQueue(){
+    if(!navigator.onLine) return;
+    if(localQueue.length===0) return;
+    // send sequentially to preserve order
+    while(localQueue.length){
+      const opObj = localQueue[0];
+      try{
+        if(opObj.op === 'create'){
+          // write at app/items/{id}
+          await db.ref('app/items/' + opObj.id).set(opObj.payload);
+        } else if(opObj.op === 'update'){
+          await db.ref('app/items/' + opObj.id).update(opObj.payload);
+        } else if(opObj.op === 'delete'){
+          await db.ref('app/items/' + opObj.id).remove();
+        }
+        // push to history if needed
+        if(opObj.op === 'create' || opObj.op === 'update'){
+          // optional: log changes
+        }
+        // remove first element
+        localQueue.shift();
+        localStorage.setItem(LS_QUEUE, JSON.stringify(localQueue));
+        updateQueueUI();
+        lastSyncEl.textContent = nowLocale();
+      } catch(err){
+        console.error('Error sincronizando:', err);
+        // if error (e.g., permission), stop trying now
+        break;
+      }
+    }
+    // After flush, reload from firebase to get canonical data
+    await loadFromFirebase(true);
+  }
+
+  // When network toggles online, try to flush
+  window.addEventListener('online', ()=>{
+    connEl.textContent = 'En línea';
+    connEl.style.color = 'green';
+    flushQueue();
+    loadFromFirebase(true);
+  });
+  window.addEventListener('offline', ()=>{
+    connEl.textContent = 'Sin conexión';
+    connEl.style.color = '#a1a1aa';
+  });
+
+  // Initial connection status
+  if(navigator.onLine){ connEl.textContent='En línea'; connEl.style.color='green'; } else { connEl.textContent='Sin conexión'; connEl.style.color='#a1a1aa'; }
+
+  // Subscribe to Firebase to keep local copy updated
+  let remoteListenerRegistered = false;
+  function registerRemoteListeners(){
+    if(remoteListenerRegistered) return;
+    remoteListenerRegistered = true;
+
+    db.ref('app/items').on('value', snapshot=>{
+      const data = snapshot.val() || {};
+      // replace local cache with remote data, but keep localQueue pending ops intact
+      localItems = {};
+      Object.keys(data).forEach(k=>{
+        localItems[k] = Object.assign({}, data[k], {id:k});
+      });
+      localStorage.setItem(LS_ITEMS, JSON.stringify(localItems));
+      refreshUI();
+    });
+
+    db.ref('app/history').limitToLast(200).on('value', snapshot=>{
+      const data = snapshot.val() || {};
+      localHistory = {};
+      Object.keys(data).reverse().forEach(k=>{ localHistory[k] = data[k]; });
+      localStorage.setItem(LS_HISTORY, JSON.stringify(localHistory));
+      renderHistory();
+    });
+  }
+  registerRemoteListeners();
+
+  // Load once from firebase
+  async function loadFromFirebase(force){
+    if(!navigator.onLine) return;
+    try{
+      const snap = await db.ref('app/items').once('value');
+      const data = snap.val() || {};
+      localItems = {};
+      Object.keys(data).forEach(k => localItems[k] = Object.assign({}, data[k], {id:k}));
+      localStorage.setItem(LS_ITEMS, JSON.stringify(localItems));
+
+      const hsnap = await db.ref('app/history').limitToLast(200).once('value');
+      localHistory = hsnap.val() || {};
+      localStorage.setItem(LS_HISTORY, JSON.stringify(localHistory));
+      refreshUI();
+      renderHistory();
+      lastSyncEl.textContent = nowLocale();
+    } catch(err){
+      console.error('loadFromFirebase error', err);
+    }
+  }
+  // Try initial load
+  if(navigator.onLine) loadFromFirebase();
+
+  // UI rendering functions
+  function refreshUI(){
+    // apply filter & search
+    const q = (qIn.value || '').toLowerCase();
+    const filter = filterIn.value;
+    lista.innerHTML = '';
+    const items = Object.values(localItems || {}).sort((a,b)=> (a.nombre||'').localeCompare(b.nombre||''));
+    items.forEach(item=>{
+      if(filter==='low' && (item.cantidad > 3)) return;
+      if(q){
+        const hay = (item.nombre||'').toLowerCase().includes(q) || (item.responsable||'').toLowerCase().includes(q);
+        if(!hay) return;
+      }
+      const card = document.createElement('div');
+      card.className = 'card';
+      const left = document.createElement('div'); left.className = 'meta';
+      const name = document.createElement('div'); name.className = 'name'; name.textContent = item.nombre;
+      const small = document.createElement('div'); small.className = 'small';
+      small.innerHTML = `<strong>Cantidad:</strong> ${item.cantidad} · <strong>Dosis:</strong> ${item.dosis||'—'}<br>
+        <strong>Hora:</strong> ${item.hora||'—'} · <strong>Resp.:</strong> ${item.responsable||'—'}`;
+      left.appendChild(name); left.appendChild(small);
+
+      const right = document.createElement('div'); right.style.display='flex'; right.style.flexDirection='column'; right.style.alignItems='flex-end';
+      const badge = document.createElement('div'); badge.className='badge ' + (item.cantidad<=3 ? 'low' : 'ok');
+      badge.textContent = item.cantidad<=3 ? 'BAJO' : 'OK';
+      const actions = document.createElement('div'); actions.className='actions'; actions.style.marginTop='8px';
+
+      const takeBtn = document.createElement('button'); takeBtn.textContent='💊 Tomar 1';
+      takeBtn.onclick = ()=>{ takeDose(item); };
+      const editBtn = document.createElement('button'); editBtn.textContent='✏️ Editar';
+      editBtn.onclick = ()=>{ fillFormForEdit(item); };
+      const delBtn = document.createElement('button'); delBtn.textContent='🗑️';
+      delBtn.onclick = ()=>{ if(confirm('Eliminar ' + item.nombre + '?')) deleteItem(item.id); };
+
+      actions.appendChild(takeBtn); actions.appendChild(editBtn); actions.appendChild(delBtn);
+      right.appendChild(badge); right.appendChild(actions);
+
+      card.appendChild(left); card.appendChild(right);
+      lista.appendChild(card);
+    });
+    updateQueueUI();
+  }
+
+  // Fill form to edit
+  function fillFormForEdit(item){
+    editingId = item.id;
+    nombreIn.value = item.nombre || '';
+    cantidadIn.value = item.cantidad || '';
+    horaIn.value = item.hora || '';
+    dosisIn.value = item.dosis || '';
+    responsableIn.value = item.responsable || '';
+    frecuenciaIn.value = item.frecuencia || '';
+  }
+
+  // Delete item
+  async function deleteItem(id){
+    await writeWithQueue('delete', id, null);
+    // also push a history entry
+    await pushHistory({ itemId: id, nombre: localItems[id]?.nombre || '', responsable: currentUser?.name || '', accion: 'Eliminó item', fecha: nowLocale(), user: currentUser?.name || 'anon' });
+  }
+
+  // Take one dose (decrement)
+  async function takeDose(item){
+    if(item.cantidad <= 0){ alert('No hay más unidades'); return; }
+    const newCantidad = item.cantidad - 1;
+    const payload = { cantidad: newCantidad, updatedAt: TS() };
+    await writeWithQueue('update', item.id, Object.assign({}, item, payload));
+    // history
+    await pushHistory({ itemId: item.id, nombre: item.nombre, responsable: currentUser?.name || item.responsable || '', accion: `Tomó 1 (${item.dosis || 'dose'})`, fecha: nowLocale(), user: currentUser?.name || 'anon' });
+    // notify visually
+    flashNotice(`${item.nombre}: se ha tomado 1. Quedan ${newCantidad}`);
+  }
+
+  // Push history entry to both local and remote queue
+  async function pushHistory(obj){
+    const h = Object.assign({}, obj, { ts: TS() });
+    // write to firebase if online, else store locally to send later by queue as op 'history'
+    if(navigator.onLine){
+      try{
+        await db.ref('app/history').push(h);
+      } catch(e){
+        // store local
+        const key = 'h_' + Date.now();
+        localHistory[key] = h;
+        localStorage.setItem(LS_HISTORY, JSON.stringify(localHistory));
+      }
+    } else {
+      const key = 'h_' + Date.now();
+      localHistory[key] = h;
+      localStorage.setItem(LS_HISTORY, JSON.stringify(localHistory));
+    }
+    renderHistory();
+  }
+
+  function renderHistory(){
+    histEl.innerHTML = '';
+    const items = Object.values(localHistory || {}).slice().reverse();
+    items.slice(0,200).forEach(h=>{
+      const d = document.createElement('div');
+      d.textContent = `🕓 ${h.fecha || h.ts}: ${h.user || h.responsable || ''} → ${h.accion} (${h.nombre||''})`;
+      histEl.appendChild(d);
+    });
+  }
+
+  // Queue UI
+  function updateQueueUI(){
+    queueEl.innerHTML = '';
+    localQueue.forEach((op,i)=>{
+      const d = document.createElement('div');
+      d.textContent = `${i+1}. [${op.op}] ${op.id} @ ${new Date(op.ts).toLocaleString()}`;
+      queueEl.appendChild(d);
+    });
+  }
+
+  // Delete item wrapper
+  async function deleteItem(id){
+    await writeWithQueue('delete', id, null);
+    await pushHistory({ itemId: id, nombre: localItems[id]?.nombre || '', responsable: currentUser?.name || '', accion: 'Eliminó item', fecha: nowLocale(), user: currentUser?.name || 'anon' });
+  }
+
+  // Flash small notice
+  function flashNotice(text){
+    const el = document.createElement('div');
+    el.textContent = text;
+    el.style.position='fixed';
+    el.style.left='50%';
+    el.style.transform='translateX(-50%)';
+    el.style.bottom='24px';
+    el.style.padding='10px 14px';
+    el.style.background='linear-gradient(90deg,var(--accent1),var(--accent2))';
+    el.style.color='white';
+    el.style.borderRadius='10px';
+    el.style.boxShadow='0 6px 20px rgba(2,6,23,0.15)';
+    document.body.appendChild(el);
+    setTimeout(()=>el.remove(),3500);
+  }
+
+  // Search/filter listeners
+  qIn.addEventListener('input', ()=>refreshUI());
+  filterIn.addEventListener('change', ()=>refreshUI());
+
+  // Periodic tasks: try flush queue every 10s if online
+  setInterval(()=>{ if(navigator.onLine) flushQueue(); }, 10000);
+
+  // Init: populate UI from local cache
+  function initFromLocal(){
+    localItems = JSON.parse(localStorage.getItem(LS_ITEMS) || '{}');
+    localHistory = JSON.parse(localStorage.getItem(LS_HISTORY) || '{}');
+    localQueue = JSON.parse(localStorage.getItem(LS_QUEUE) || '[]');
+    renderHistory();
+    refreshUI();
+    updateQueueUI();
+  }
+  initFromLocal();
+
+  // Small auto-check: if nothing saved yet -> create demo sample (optional)
+  if(Object.keys(localItems).length === 0 && navigator.onLine){
+    // do not auto-add if user already has data
+    // optional demo seed - commented out. Uncomment to seed.
+    // seedDemo();
+  }
+
+  // Optional: seeding helper (commented out)
+  function seedDemo(){
+    const id = db.ref('app/items').push().key;
+    const obj = { nombre:'Aspirina', cantidad:10, hora:'08:00', dosis:'1 tableta', responsable:'Mamá', frecuencia:'mañana', createdAt:TS(), updatedAt:TS() };
+    writeWithQueue('create', id, obj);
+  }
+
+  // Ensure single page works even when firebase permission forbid writes:
+  db.ref('.info/connected').on('value', snap=>{
+    if(snap.val() === true){ connEl.textContent='En línea'; connEl.style.color='green'; } else { connEl.textContent='Sin conexión'; connEl.style.color='#a1a1aa'; }
+  });
+
+  // Final: try initial flush if online
+  if(navigator.onLine) flushQueue();
+
+  </script>
+</body>
+</html>
